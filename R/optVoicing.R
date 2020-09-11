@@ -525,7 +525,7 @@ evaluate_voice <- function(praat.tsv,     # path to Praat output file
     pred <- filter(praat.tsv, interval==gold[rx,]$interval)
     if(nrow(pred)>0) {
       if(is.na(pred[1,]$voiced)){
-        warning(gettextf("PRAAT RESULT IS NA FOR %s: %.0f [%s]", DATAFILES[gold[rx,]$index,]$gold.voice.file, gold[rx,]$interval, gold[rx,]$lab), immediate. = TRUE)
+        warning(gettextf("PRAAT RESULT IS NA FOR %s: %.0f [%s]", DATAFILES[gold[rx,]$index,]$gold.voice.file, gold[rx,]$interval, gold[rx,]$label), immediate. = TRUE)
         fv <- default.error
         fu <- default.error
       } else {
@@ -543,7 +543,7 @@ evaluate_voice <- function(praat.tsv,     # path to Praat output file
       fehlerV <- fehlerV + fv
       fehlerU <- fehlerU + fu
     } else {
-      warning(gettextf("NO PRAAT RESULT FOR %s: %.0f [%s]", DATAFILES[gold[rx,]$index,]$gold.voice.file, gold[rx,]$interval, gold[rx,]$lab), immediate. = TRUE)
+      warning(gettextf("NO PRAAT RESULT FOR %s: %.0f [%s]", DATAFILES[gold[rx,]$index,]$gold.voice.file, gold[rx,]$interval, gold[rx,]$label), immediate. = TRUE)
       fehlerV <- fehlerV + default.error
       fehlerU <- fehlerU + default.error
     }
@@ -623,7 +623,7 @@ opt_fun <- function(x) {
       # EVALUATE ACCURACY OF PRAAT'S VOICING ANALYSIS
       f <- evaluate_voice(praat.tsv=tmp.tbl, gold.index = OPT_DATAINDEX[ix], default.error=KONFIG$DEFAULT_ERROR, train = TRUE)
       if(is.na(f)) {
-        warning(gettextf("ERROR IS NA FOR %s", iFile))
+        warning(gettextf("ERROR TERM IS NA FOR %s", iFile), immediate.=TRUE)
         f <- 0 # THIS SHOULD ACTUALLY BE A LARGE VALUE, SINCE WE ARE MINIMIZING FOR f!
       }
       fehler <- fehler + f
@@ -652,7 +652,7 @@ opt_fun <- function(x) {
 #
 # =============================================================================
 
-plot_and_save_results <- function(nm.result, outputDir, room, prev.par.file)
+plot_and_save_results <- function(nm.result, outputDir, room, prev_pars.tbl)
 {
   stempel <- format(Sys.time(), format="%Y-%m-%d+%H%M%S")
   outFile <- file.path(outputDir, paste0("nm_results_", stempel, ".rds"))
@@ -668,7 +668,6 @@ plot_and_save_results <- function(nm.result, outputDir, room, prev.par.file)
   optimalParameters <- get_parameters_from_NMresult(nm.result)
   cat(gettextf("  PARAMETERS  =[%8.6f, %8.6f, %8.6f, %8.6f, %8.6f]\n", optimalParameters[1], optimalParameters[2], optimalParameters[3], optimalParameters[4], optimalParameters[5]))
 
-  prev_pars.tbl <- readRDS(prev.par.file)
   cat(gettextf("Number of parameter combinations: %4d\nTotal number of function calls:   %4d\n", nrow(prev_pars.tbl), sum(prev_pars.tbl$num.calls)   ))
 }
 
@@ -740,49 +739,63 @@ if(KONFIG$start == "default") {
 # -----------------------------------------------------------------------------
 #                                                  RUN NELDER-MEAD OPTIMIZATION
 # -----------------------------------------------------------------------------
-cat("RUNNING NELDER-MEAD OPTIMIZATION FOR ALL ROOMS...\n")
+if(KONFIG$NelderMead$max_fun < 1) {
+  warning("SKIPPING NELDER-MEAD (max_fun < 1)!", immediate. = TRUE)
 
-OPT_VERBOSE <- KONFIG$verbose
+} else {
 
-for(iRoom in 1:length(allRooms)) {# iRoom = 1
-  cat(gettextf("OPTIMIZING FOR ROOM: <%s>\n", allRooms[iRoom]))
+  cat("RUNNING NELDER-MEAD OPTIMIZATION FOR ALL ROOMS...\n")
 
-  OPT_DATAINDEX <- which(DATAFILES$room == allRooms[iRoom])
+  OPT_VERBOSE <- KONFIG$verbose
 
-  if(length(OPT_DATAINDEX)==0) {
-    warning(gettextf("No training data for room <%s>?", allRooms[iRoom]))
-    next()
-  }
+  for(iRoom in 1:length(allRooms)) {# iRoom = 1
+    cat(gettextf("OPTIMIZING FOR ROOM: <%s>\n", allRooms[iRoom]))
 
-  if(!is.null(p0List)) {
-    p0 <- p0List[[ allRooms[iRoom] ]]
-  }# ELSE all rooms use the same p0 (either default or random)
+    OPT_DATAINDEX <- which(DATAFILES$room == allRooms[iRoom])
 
-  outDir <- file.path(KONFIG$outputDir, format_room(allRooms[iRoom]))
+    if(length(OPT_DATAINDEX)==0) {
+      warning(gettextf("No training data for room <%s>?", allRooms[iRoom]))
+      next()
+    }
 
-  OPT_PREVIOUS_PARAMETERS_FILE <- file.path(outDir, "prev_pars_tbl.rds")
+    if(!is.null(p0List)) {
+      p0 <- p0List[[ allRooms[iRoom] ]]
+    }# ELSE all rooms use the same p0 (either default or random)
 
-  if(file.exists(OPT_PREVIOUS_PARAMETERS_FILE)) {
-    OPT_PREVIOUS.tbl <- readRDS(OPT_PREVIOUS_PARAMETERS_FILE)
-  } else {
-    OPT_PREVIOUS.tbl <- tibble(pitch_floor=numeric(),
-                               pitch_ceiling=numeric(),
-                               silence_threshold=numeric(),
-                               voicing_threshold=numeric(),
-                               voiced_unvoiced_cost=numeric(),
-                               num.calls=integer(),
-                               error.term=numeric())
-  }
+    outDir <- file.path(KONFIG$outputDir, format_room(allRooms[iRoom]))
 
-  nm.result <- Nelder_Mead(opt_fun, p0,
-                           lower=rep(0,length(p0)), upper=rep(1,length(p0)),
-                           control=list(maxfun=KONFIG$NelderMead$max_fun, verbose=KONFIG$NelderMead$verbose, FtolAbs=KONFIG$NelderMead$ftolabs, XtolRel=KONFIG$NelderMead$xtorel))
+    OPT_PREVIOUS_PARAMETERS_FILE <- file.path(outDir, "prev_pars_tbl.rds")
 
-  saveRDS(OPT_PREVIOUS.tbl, file = OPT_PREVIOUS_PARAMETERS_FILE)
+    if(file.exists(OPT_PREVIOUS_PARAMETERS_FILE)) {
+      OPT_PREVIOUS.tbl <- readRDS(OPT_PREVIOUS_PARAMETERS_FILE)
+      cat(gettextf("Loaded %s with %d previously tested parameter combinations\n", OPT_PREVIOUS_PARAMETERS_FILE, nrow(OPT_PREVIOUS.tbl)))
 
-  plot_and_save_results(nm.result, outputDir=outDir, room=allRooms[iRoom], prev.par.file=OPT_PREVIOUS_PARAMETERS_FILE )
+    } else {
+      OPT_PREVIOUS.tbl <- tibble(pitch_floor=numeric(),
+                                 pitch_ceiling=numeric(),
+                                 silence_threshold=numeric(),
+                                 voicing_threshold=numeric(),
+                                 voiced_unvoiced_cost=numeric(),
+                                 num.calls=integer(),
+                                 error.term=numeric())
+      #saveRDS(OPT_PREVIOUS.tbl, file = OPT_PREVIOUS_PARAMETERS_FILE)
+      #rm(prev_pars.tbl)
+    }
 
-}#ENDFOR iRoom
+    # NM <- NelderMead$new(lower=rep(0,length(p0)), upper=rep(1,length(p0)), xst=rep(0.02,length(p0)), x0=p0, xt=rep(0.02,length(p0))*5e-4)
+
+    cat(gettextf("Running Nelder-Mead with p0=[%f, %f, %f, %f, %f]\n", p0[1], p0[2], p0[3], p0[4], p0[5] ))
+    nm.result <- Nelder_Mead(opt_fun, p0,
+                             lower=rep(0,length(p0)), upper=rep(1,length(p0)),
+                             control=list(maxfun=KONFIG$NelderMead$max_fun, verbose=KONFIG$NelderMead$verbose, FtolAbs=KONFIG$NelderMead$ftolabs, XtolRel=KONFIG$NelderMead$xtorel))
+
+    saveRDS(OPT_PREVIOUS.tbl, file = OPT_PREVIOUS_PARAMETERS_FILE)
+
+    plot_and_save_results(nm.result, outputDir=outDir, room=allRooms[iRoom], prev_pars.tbl = OPT_PREVIOUS.tbl)
+
+  }#ENDFOR iRoom
+
+}
 
 # -----------------------------------------------------------------------------
 # FINALLY: COLLECT OPTIMAL PARAMETERS
@@ -790,14 +803,11 @@ for(iRoom in 1:length(allRooms)) {# iRoom = 1
 optimalParFile  <- file.path(KONFIG$outputDir, "p0List.rds")
 cat(gettextf("SAVING OPTIMAL PARAMETERS IN OBJECT p0List TO FILE %s\n", optimalParFile))
 
-p0List <- find_previous_optima(KONFIG$outputDir, all.rooms=allRooms, default.p0=praat_p0, file.pattern = paste0(KONFIG$NM_RESULT_PREFIX, ".+\\.rds"))
 if(file.exists(optimalParFile)) {
   backup_File(optimalParFile)
 }
+p0List <- find_previous_optima(KONFIG$outputDir, all.rooms=allRooms, default.p0=praat_p0, file.pattern = paste0(KONFIG$NM_RESULT_PREFIX, ".+\\.rds"))
 saveRDS(p0List, file=optimalParFile)
-
-warning("UNTESTED CODE FOLLOWING...\n")
-
 
 cat("EXPORTING OPTIMAL PARAMETERS TO CSV FILE...\n")
 praatParams.tbl <- tibble(room = character(),
@@ -887,16 +897,17 @@ if(KONFIG$doTrainTest) {
       DATAFILES[ix,]$error.def <- evaluate_voice(praat.tsv=tmp.tbl, gold.index = ix, default.error=KONFIG$DEFAULT_ERROR, train = FALSE)
       rm(tmp.tsv, tmp.tbl)
     }
+
+    cat("EXPORTING TEST RESULTS...\n")
+    stempel <- format(Sys.time(), format="%Y-%m-%d+%H%M%S")
+    outFile <- file.path(KONFIG$outputDir, paste0("test_results_tbl_", stempel, ".csv"))
+    write_csv(select(DATAFILES, gold.voice.file, room, test.N, error.opt, error.def), path = outFile)
+
   } else {
     warning("SKIPPING EVALUATION ON TEST SET!", immediate. = TRUE)
   }
 }
 
 # =============================================================================
-cat("EXPORTING TEST RESULTS...\n")
-
-stempel <- format(Sys.time(), format="%Y-%m-%d+%H%M%S")
-outFile <- file.path(KONFIG$outputDir, paste0("test_results_tbl_", stempel, ".csv"))
-write_csv(select(DATAFILES, gold.voice.file, room, test.N, error.opt, error.def), path = outFile)
-
 cat("ALL DONE. BYE!\n")
+
