@@ -1,0 +1,33 @@
+gold.voice.file,room,audio.file
+/path/to/annotation/file/R2-EX1-02_M055_L1_voice.TextGrid,4216,/path/to/audio/file/R2-EX1-02_M055_L1.wav
+/path/to/annotation/file/R2-EX1-02_M055_L2_voice.TextGrid,4216,/path/to/audio/file/R2-EX1-02_M055_L2.wav
+/path/to/annotation/file/R2-EX1-03_F068_L1_voice.TextGrid,4216,/path/to/audio/file/R2-EX1-03_F068_L1.wav
+/path/to/annotation/file/R2-EX1-03_F068_L2_voice.TextGrid,4216,/path/to/audio/file/R2-EX1-03_F068_L2.wav
+/path/to/annotation/file/R2-EX1-05_M085_L1_voice.TextGrid,Bespr.zimmer 1,/path/to/audio/file/R2-EX1-05_M085_L1.wav
+/path/to/annotation/file/R2-EX1-05_M085_L2_voice.TextGrid,Bespr.zimmer 1,/path/to/audio/file/R2-EX1-05_M085_L2.wav
+/path/to/annotation/file/R2-EX1-06_F073_L1_voice.TextGrid,Bespr.zimmer 1,/path/to/audio/file/R2-EX1-06_F073_L1.wav
+/path/to/annotation/file/R2-EX1-06_F073_L2_voice.TextGrid,Bespr.zimmer 1,/path/to/audio/file/R2-EX1-06_F073_L2.wav
+/path/to/annotation/file/R2-EX2-01_M023_L1_voice.TextGrid,Kartenraum,/path/to/audio/file/R2-EX2-01_M023_L1.wav
+/path/to/annotation/file/R2-EX2-01_M023_L2_voice.TextGrid,Kartenraum,/path/to/audio/file/R2-EX2-01_M023_L2.wav
+/path/to/annotation/file/R2-EX2-04_M009_L1_voice.TextGrid,Kartenraum,/path/to/audio/file/R2-EX2-04_M009_L1.wav
+/path/to/annotation/file/R2-EX2-04_M009_L2_voice.TextGrid,Kartenraum,/path/to/audio/file/R2-EX2-04_M009_L2.wav
+/path/to/annotation/file/R2-EX2-08_M077_L1_voice.TextGrid,Bespr.zimmer,/path/to/audio/file/R2-EX2-08_M077_L1.wav
+/path/to/annotation/file/R2-EX2-08_M077_L2_voice.TextGrid,Bespr.zimmer,/path/to/audio/file/R2-EX2-08_M077_L2.wav
+/path/to/annotation/file/R2-EX2-12_M044_L1_voice.TextGrid,Lehrerzimmer III,/path/to/audio/file/R2-EX2-12_M044_L1.wav
+/path/to/annotation/file/R2-EX2-12_M044_L2_voice.TextGrid,Lehrerzimmer III,/path/to/audio/file/R2-EX2-12_M044_L2.wav
+/path/to/annotation/file/R2-EX2-12_M049_L1_voice.TextGrid,Lehrerzimmer III,/path/to/audio/file/R2-EX2-12_M049_L1.wav
+/path/to/annotation/file/R2-EX2-12_M049_L2_voice.TextGrid,Lehrerzimmer III,/path/to/audio/file/R2-EX2-12_M049_L2.wav
+/path/to/annotation/file/R2-EX2-14_F054_L1_voice.TextGrid,Bespr.zimmer,/path/to/audio/file/R2-EX2-14_F054_L1.wav
+/path/to/annotation/file/R2-EX2-14_F054_L2_voice.TextGrid,Bespr.zimmer,/path/to/audio/file/R2-EX2-14_F054_L2.wav
+/path/to/annotation/file/R2-EX2-20_M048_L1_voice.TextGrid,Lehrerzimmer II,/path/to/audio/file/R2-EX2-20_M048_L1.wav
+/path/to/annotation/file/R2-EX2-20_M048_L2_voice.TextGrid,Lehrerzimmer II,/path/to/audio/file/R2-EX2-20_M048_L2.wav
+/path/to/annotation/file/R2-EX2-21_F032_L1_voice.TextGrid,Lehrerzimmer II,/path/to/audio/file/R2-EX2-21_F032_L1.wav
+/path/to/annotation/file/R2-EX2-21_F032_L2_voice.TextGrid,Lehrerzimmer II,/path/to/audio/file/R2-EX2-21_F032_L2.wav
+/path/to/annotation/file/R2-EX2-23_M088_L1_voice.TextGrid,Bespr.zimmer 2,/path/to/audio/file/R2-EX2-23_M088_L1.wav
+/path/to/annotation/file/R2-EX2-23_M088_L2_voice.TextGrid,Bespr.zimmer 2,/path/to/audio/file/R2-EX2-23_M088_L2.wav
+/path/to/annotation/file/R2-EX2-24_F077_L1_voice.TextGrid,Bespr.zimmer 2,/path/to/audio/file/R2-EX2-24_F077_L1.wav
+/path/to/annotation/file/R2-EX2-24_F077_L2_voice.TextGrid,Bespr.zimmer 2,/path/to/audio/file/R2-EX2-24_F077_L2.wav
+/path/to/annotation/file/R2-EX4-01_F022_L1_voice.TextGrid,Milchraum,/path/to/audio/file/R2-EX4-01_F022_L1.wav
+/path/to/annotation/file/R2-EX4-01_F022_L2_voice.TextGrid,Milchraum,/path/to/audio/file/R2-EX4-01_F022_L2.wav
+/path/to/annotation/file/R2-EX4-01_M001_L1_voice.TextGrid,Milchraum,/path/to/audio/file/R2-EX4-01_M001_L1.wav
+/path/to/annotation/file/R2-EX4-01_M001_L2_voice.TextGrid,Milchraum,/path/to/audio/file/R2-EX4-01_M001_L2.wav

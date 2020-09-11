@@ -1,0 +1,5 @@
+speaker,sex,textGrid,audio
+F022,f,/path/to/annotation/file/R2-EX4-01_F022_L1.TextGrid,/path/to/audio/file/R2-EX4-01_F022_L1.wav
+F022,f,/path/to/annotation/file/R2-EX4-01_F022_L2.TextGrid,/path/to/audio/file/R2-EX4-01_F022_L2.wav
+M023,m,/path/to/annotation/file/R2-EX2-01_M023_L1.TextGrid,/path/to/audio/file/R2-EX2-01_M023_L1.wav
+M023,m,/path/to/annotation/file/R2-EX2-01_M023_L2.TextGrid,/path/to/audio/file/R2-EX2-01_M023_L2.wav
