@@ -11,10 +11,16 @@ daniel.duran@germanistik.uni-freiburg.de
 
 http://paul.igl.uni-freiburg.de/duran/
 
+## Changes
+
+### 2020-09-14
+* internals: reimplemented the call of Nelder_Mead and the handling of previously evaluated parameter combinations
+
 
 ## Dependencies
 
 * a working installation of Praat <http://www.fon.hum.uva.nl/praat/>
+* a working installation of R <https://www.r-project.org/>
 * the R package **foreach** <https://CRAN.R-project.org/package=foreach>
 * the R package **doMC** (on Linux) <https://CRAN.R-project.org/package=doMC>
 * the R package **doSNOW** (on Windows) <https://CRAN.R-project.org/package=doSNOW>
@@ -31,6 +37,8 @@ Semi-supervised optimization of Praat analysis parameters for voicing measuremen
 ### Running the optimization
 
 In order to run the optimization, you only need to run the R-script **optVoicing.R**.
+
+_WARNING:_ Running this script may take a very long time (depending on your machine). You may want to run the script first on a smaller supset of your data and/or restrict the maximum number of function evaluations to a very small value until your setup is ready!
 
 #### Configuration
 
@@ -53,6 +61,8 @@ Unsupervised optimization of Praat analysis parameters for formant measurements 
 ### Running the optimization
 
 In order to run the optimization, you only need to run the R-script **optFormants.R**.
+
+_WARNING:_ Running this script may take a very long time (depending on your machine). You may want to run the script first on a smaller supset of your data until your setup is ready!
 
 #### Configuration
 

@@ -17,7 +17,7 @@ set.seed(42)
 
 KONFIG <- list(isWindows      = str_detect(Sys.getenv('OS'), pattern = "(W|w)indows") | str_detect(Sys.getenv('SystemRoot'), pattern = "(W|w)indows"),
                trainTestRatio = 0.85,  # SET TO NA IN ORDER TO USE ALL DATA FOR OPTIMIZATION
-               trainMinimum   = 5,     # THE ABSOLUTE MINIMUM OF REQUIRED TOKENS PER LABEL
+               trainMinimum   = 5,     # THE ABSOLUTE MINIMUM OF REQUIRED TOKENS PER LABEL (CURRENTLY NOT IMPLEMENTED)
                runTest        = FALSE, # ONLY IF trainTestRatio IS NOT NA
                # SKIPPING THE TEST SET MAY BE USEFUL IF YOU WANT/HAVE TO RESTART THE OPTIMIZATION REPEATEDLY
 
@@ -31,7 +31,11 @@ KONFIG <- list(isWindows      = str_detect(Sys.getenv('OS'), pattern = "(W|w)ind
                phone_segments             = "p,t,k,b,d,g,<V>",
 
                # SEARCH PARAMETERS:
-               start               = "random", # available options: "default", "random", "previous"
+               start               = "random",
+               # AVAILABLE OPTIONS FOR "start": "default", "random", "previous"
+               # -- OPTION "previous" LOADS PREVIOUSLY TESTED PARAMETERSETTINGS (IF ANY, OTHERWIESE THE DEFAULT SETTINGS ARE USED)
+               # -- OPTION "random"   OVERRIDES PREVIOUS RESULTS
+               # -- OPTION "default"  OVERRIDES RANDOM START AND PREVIOUS RESULTS
                RANDOM_LOW          = 1e-8,
                RANDOM_HIGH         = 1 - 1e-8,
                ROUND_HZ_PARAMETERS = TRUE,
@@ -387,8 +391,8 @@ find_previous_optima <- function(result.dir, all.rooms, default.p0, file.pattern
 # -----------------------------------------------------------------------------
 # THIS IS BAD PROGRAMMING STYLE (USING GLOBAL VARIABLES)
 # see: opt_fun
-get_parameters_from_NMx <- function(nm.x) {
-  if(KONFIG$ROUND_HZ_PARAMETERS){
+get_parameters_from_NMx <- function(nm.x, do.round = KONFIG$ROUND_HZ_PARAMETERS) {
+  if(do.round){
     p <- list(pitch_floor          = round(min_max_norm(nm.x[KONFIG$parameterName_index$pitch_floor],    KONFIG$pitch_floor_range, reverse=TRUE)),
               pitch_ceiling        = round(min_max_norm(nm.x[KONFIG$parameterName_index$pitch_ceiling],  KONFIG$pitch_ceiling_range, reverse=TRUE)),
               silence_threshold    = min_max_norm(nm.x[KONFIG$parameterName_index$silence_threshold],    KONFIG$silence_threshold_range, reverse=TRUE),
@@ -410,14 +414,62 @@ get_parameters_from_NMresult <- function(nm.result) {
 }
 
 
+# -----------------------------------------------------------------------------
+
+load_previous_parameters_to_tbl <- function(data.dir, file.pattern, show.warnings=TRUE) {
+
+  prev.tbl <- tibble(pf=double(), pc=double(), st=double(), vt=double(), vc=double(), fval=double(), num.calls=integer())
+
+  prevFiles <- dir(data.dir, recursive = TRUE, full.names = TRUE, pattern = file.pattern)
+  N <- length(prevFiles)
+  if(N > 0) {
+    # THERE ARE rds-FILES WITH PREVIOUSLY EVALUATED PARAMETER COMBINATIONS:
+    # WE IMPORT THEM IN ORDER TO SPEED UP THE COMPUTATIONS WITH NELDER-MEAD
+    for(ix in 1:N) {
+      prev.tbl <- rbind(prev.tbl, readRDS(prevFiles[ix]))
+    }
+    prev.tbl <- mutate(prev.tbl, x = paste(pf, pc, st, vt, vc, sep = "#"), use = FALSE)
+    schluessel <- unique(prev.tbl$x)
+    N <- length(schluessel)
+    if(N>0 && N < nrow(prev.tbl)) {
+      for(xS in schluessel) {# xS=schluessel[1]
+        kIndex <- which(prev.tbl$x == xS)
+        if(length(kIndex)==1) {
+          # THERE IS ONLY ONE UNIQUE ROW OF PREVIOUS EVALUATIONS FOR THIS PARAMETER COMBINATION:
+          prev.tbl[kIndex,]$use <- TRUE
+        } else if (length(kIndex)>1) {
+          # WE NEED TO COMBINE MULTIPLE ROWS (FROM DIFFERENT rds-FILES):
+          tmp.tbl <- prev.tbl[kIndex,]
+          if(length(unique(tmp.tbl$fval))>1){
+            warning(gettextf("Found %d different error terms for p=[%f, %f, %f, %f, %f] -> discarding parameter combination!",
+                             length(unique(tmp.tbl$fval)), tmp.tbl[1,]$pf, tmp.tbl[1,]$pc, tmp.tbl[1,]$st, tmp.tbl[1,]$vt, tmp.tbl[1,]$vc ),
+                    immediate. = TRUE)
+          } else {
+            aufrufe <- sum(tmp.tbl$num.calls)
+            prev.tbl[kIndex[1],]$num.calls <- aufrufe
+            prev.tbl[kIndex[1],]$use       <- TRUE
+          }
+        }
+      }
+    }
+    prev.tbl <- filter(prev.tbl, use == TRUE) %>% select(-x, -use)
+    message(gettextf("Imported %d previously evaluated parameter combinations.", nrow(prev.tbl)))
+  }
+  return(prev.tbl)
+}
+
 
 # -----------------------------------------------------------------------------
 # FUNCTION "praat_voiceAdvanced"
 # RUNS PRAAT SCRIPT "Voicing/voice-Advanced.praat" AND RETURNS THE VOICING TABLE
 
-praat_voiceAdvanced <- function (sound.file, textGrid.file, target.tier, target.segments, output.tsv.file,
-                                 praat.exe, praat.script,
-                                 is.Windows,
+praat_voiceAdvanced <- function (sound.file, textGrid.file, output.tsv.file,
+                                 praat.exe       = KONFIG$PRAAT.EXE,
+                                 praat.script    = KONFIG$PRAAT.SCRIPT,
+                                 is.Windows      = KONFIG$isWindows,
+                                 # ARGUMENTS FOR THE PRAAT SCRIPT:
+                                 target.tier     = KONFIG$phone_tier,
+                                 target.segments = KONFIG$phone_segments,
                                  time.step            = 0.0,
                                  pitch.floor          = 75,
                                  max.candidates       = 15,
@@ -431,7 +483,7 @@ praat_voiceAdvanced <- function (sound.file, textGrid.file, target.tier, target.
                                  max.period.factor    = 1.3,
                                  max.amplitude.factor = 1.6,
                                  verbose              = FALSE,
-                                 write.log.file       = TRUE  )
+                                 write.log.file       = FALSE  )
 {
   stopifnot(file.exists(praat.exe),
             file.exists(praat.script),
@@ -489,7 +541,7 @@ praat_voiceAdvanced <- function (sound.file, textGrid.file, target.tier, target.
   if(file.exists(output.tsv.file)) {
     suppressMessages( voice.tbl <- read_tsv(output.tsv.file) )
   } else {
-    warning(gettextf("[praat_voiceAdvanced] No Praat output found at %s", output.tsv.file), immediate. = TRUE)
+    warning(gettextf("No Praat output found at %s", output.tsv.file), immediate. = TRUE)
     voice.tbl <- NULL
   }
 
@@ -503,59 +555,55 @@ praat_voiceAdvanced <- function (sound.file, textGrid.file, target.tier, target.
 
 
 # =============================================================================
+#                                              EVALUATION OF PRAAT MEASUREMENTS
+# =============================================================================
+# Errors on voiced and unvoiced parts are actually complementary, but there are
+# probably different confidences associated with voiced and unvoiced (and reverberation)
+# annotations, so we compute them separately:
 #
 # =============================================================================
 
-evaluate_voice <- function(praat.tsv,     # path to Praat output file
-                           gold.index,    # file index of gold annotations
-                           default.error,
-                           normalize.error=FALSE,
-                           train = TRUE
-) {
 
-  if(train){
-    gold <-  filter(GOLDVOICE, index == gold.index, train == TRUE)
-  } else {
-    gold <-  filter(GOLDVOICE, index == gold.index, train == FALSE)
-  }
 
+evaluate_voice_2 <- function(praat.tbl, # table with Praat output
+                             gold.tbl,  # table with reference annotations
+                             default.error = KONFIG$DEFAULT_ERROR,
+                             normalize.error=FALSE ) {
   fehlerV <- 0
   fehlerU <- 0
-  for(rx in 1:nrow(gold)) {
-    pred <- filter(praat.tsv, interval==gold[rx,]$interval)
+  for(rx in 1:nrow(gold.tbl)) {# rx=1
+    pred <- filter(praat.tbl, interval==gold.tbl[rx,]$interval)
     if(nrow(pred)>0) {
       if(is.na(pred[1,]$voiced)){
-        warning(gettextf("PRAAT RESULT IS NA FOR %s: %.0f [%s]", DATAFILES[gold[rx,]$index,]$gold.voice.file, gold[rx,]$interval, gold[rx,]$label), immediate. = TRUE)
+        #warning(gettextf("PRAAT RESULT IS NA FOR %s: %.0f [%s]", DATAFILES[gold[rx,]$index,]$gold.voice.file, gold[rx,]$interval, gold[rx,]$label), immediate. = TRUE)
         fv <- default.error
         fu <- default.error
       } else {
-        if(is.na(gold[rx,]$conf.v)){
+        if(is.na(gold.tbl[rx,]$conf.v)){
           fv <- 0
         } else {
-          fv <- (abs(gold[rx,]$voiced - pred[1,]$voiced) * gold[rx,]$conf.v)
+          fv <- (abs(gold.tbl[rx,]$voiced - pred[1,]$voiced) * gold.tbl[rx,]$conf.v)
         }
-        if(is.na(gold[rx,]$conf.u)){
+        if(is.na(gold.tbl[rx,]$conf.u)){
           fu <- 0
         } else {
-          fu <- (abs(gold[rx,]$unvoiced - pred[1,]$unvoiced) * gold[rx,]$conf.u)
+          fu <- (abs(gold.tbl[rx,]$unvoiced - pred[1,]$unvoiced) * gold.tbl[rx,]$conf.u)
         }
       }
       fehlerV <- fehlerV + fv
       fehlerU <- fehlerU + fu
     } else {
-      warning(gettextf("NO PRAAT RESULT FOR %s: %.0f [%s]", DATAFILES[gold[rx,]$index,]$gold.voice.file, gold[rx,]$interval, gold[rx,]$label), immediate. = TRUE)
+      #warning(gettextf("NO PRAAT RESULT FOR %s: %.0f [%s]", DATAFILES[gold[rx,]$index,]$gold.voice.file, gold[rx,]$interval, gold[rx,]$label), immediate. = TRUE)
       fehlerV <- fehlerV + default.error
       fehlerU <- fehlerU + default.error
     }
   }
   if(normalize.error) {
-    fehlerV <- fehlerV / (nrow(gold) * default.error)
-    fehlerU <- fehlerU / (nrow(gold) * default.error)
+    fehlerV <- fehlerV / (nrow(gold.tbl) * default.error)
+    fehlerU <- fehlerU / (nrow(gold.tbl) * default.error)
   }
   return( fehlerV + fehlerU )
 }
-
-
 
 
 
@@ -567,61 +615,67 @@ evaluate_voice <- function(praat.tsv,     # path to Praat output file
 # INPUT:  A NUMERIC VECTOR (THE PARAMETERS FOR PRAAT; MAPPED TO 0...1)
 # OUTPUT: A SCALAR (THE ERROR TERM, THIS SHOULD BE MINIMIZED)
 
-opt_fun <- function(x) {
+opt_fun_2 <- function(x) {# x<-p0
 
-  fehler <- 0
+  stopifnot(!is.null(inputFiles.tbl <- attr(x, "input")),
+            nrow(inputFiles.tbl) > 0,
+            !is.null(prev.tbl <- attr(x, "cache")),
+            !is.null(gold.tbl <- attr(x, "gold")))
 
   # DETERMINE PARAMETER VALUES FOR PRAAT
   praatPar <- get_parameters_from_NMx(x)
 
-  prevX <- which(OPT_PREVIOUS.tbl$pitch_floor==praatPar$pitch_floor &
-                   OPT_PREVIOUS.tbl$pitch_ceiling==praatPar$pitch_ceiling &
-                   OPT_PREVIOUS.tbl$silence_threshold==praatPar$silence_threshold &
-                   OPT_PREVIOUS.tbl$voicing_threshold==praatPar$voicing_threshold &
-                   OPT_PREVIOUS.tbl$voiced_unvoiced_cost==praatPar$voiced_unvoiced_cost)
+  prevX <- which(prev.tbl$pf == praatPar$pitch_floor &
+                   prev.tbl$pc == praatPar$pitch_ceiling &
+                   prev.tbl$st == praatPar$silence_threshold &
+                   prev.tbl$vt == praatPar$voicing_threshold &
+                   prev.tbl$vc == praatPar$voiced_unvoiced_cost )
 
-  if(length(prevX)>0) {
-    OPT_PREVIOUS.tbl[prevX,]$num.calls <-  OPT_PREVIOUS.tbl[prevX,]$num.calls + 1
-    fehler <- OPT_PREVIOUS.tbl[prevX,]$error.term
-    if(OPT_VERBOSE) cat(gettextf("FUN x=[%8.6f, %8.6f, %8.6f, %8.6f, %8.6f] -> RETURNING CACHED VALUE = %.6e\n", x[1], x[2], x[3], x[4], x[5], fehler))
-    return(fehler)
+  if(length(prevX) > 0) {
+    # THE CURRENT INPUT VECTOR x HAS ALREADY BEEN EVALUATED
+    # RETURN THE CACHED VALUE:
+    return(prev.tbl[prevX,]$fval)
   }
 
-  if(OPT_VERBOSE) cat(gettextf("FUN x=[%8.6f, %8.6f, %8.6f, %8.6f, %8.6f] ", x[1], x[2], x[3], x[4], x[5]))
+  fehler <- 0.0
 
   # RUN PRAAT
-  for(ix in 1:length(OPT_DATAINDEX)){# ix=1
+  for(ix in 1:nrow(inputFiles.tbl)){# ix=1
 
-    if(OPT_VERBOSE) cat('+')
+    #if(verbose) cat('+')
 
-    iFile   <- DATAFILES[OPT_DATAINDEX[ix],]$gold.voice.file
-    wavFile <- DATAFILES[OPT_DATAINDEX[ix],]$audio.file
+    iFile   <- inputFiles.tbl[ix,]$gold.voice.file
+    wavFile <- inputFiles.tbl[ix,]$audio.file
     tmp.tsv <- tempfile(fileext = ".tsv")
 
     tmp.tbl <- NULL
 
     suppressWarnings (
-      tmp.tbl <- praat_voiceAdvanced(sound.file = wavFile, textGrid.file = iFile, target.tier = KONFIG$phone_tier, target.segments = KONFIG$phone_segments, output.tsv.file = tmp.tsv,
+      tmp.tbl <- praat_voiceAdvanced(sound.file = wavFile,
+                                     textGrid.file = iFile,
+                                     output.tsv.file = tmp.tsv,
+                                     #target.tier = config$phone_tier,
+                                     #target.segments = config$phone_segments,
                                      pitch.floor = praatPar$pitch_floor,
                                      pitch.ceiling = praatPar$pitch_ceiling,
                                      silence.threshold = praatPar$silence_threshold,
                                      voicing.threshold = praatPar$voicing_threshold,
-                                     voiced.unvoiced.cost = praatPar$voiced_unvoiced_cost,
-                                     write.log.file = FALSE,
-                                     praat.exe = KONFIG$PRAAT.EXE,
-                                     praat.script = KONFIG$PRAAT.SCRIPT,
-                                     is.Windows = KONFIG$isWindows)
+                                     voiced.unvoiced.cost = praatPar$voiced_unvoiced_cost
+                                     #write.log.file = FALSE,
+                                     #praat.exe = config$PRAAT.EXE,
+                                     #praat.script = config$PRAAT.SCRIPT,
+                                     #is.Windows = config$isWindows
+      )
     )
 
-
     if(is.null(tmp.tbl) || nrow(tmp.tbl)==0) {
-      warning(gettextf("No Praat results for %s", iFile))
+      warning(gettextf("No Praat results for %s!", iFile))
       #TODO SOME DEFAULT ERROR VALUE SHOULD BE ADDED HERE (DEPENDING ON THE NUMBER OF DATA POINTS)
     } else {
-      if(OPT_VERBOSE) cat('.')
+      #if(verbose) cat('.')
 
       # EVALUATE ACCURACY OF PRAAT'S VOICING ANALYSIS
-      f <- evaluate_voice(praat.tsv=tmp.tbl, gold.index = OPT_DATAINDEX[ix], default.error=KONFIG$DEFAULT_ERROR, train = TRUE)
+      f <- evaluate_voice_2(praat.tbl = tmp.tbl, gold.tbl = gold.tbl )
       if(is.na(f)) {
         warning(gettextf("ERROR TERM IS NA FOR %s", iFile), immediate.=TRUE)
         f <- 0 # THIS SHOULD ACTUALLY BE A LARGE VALUE, SINCE WE ARE MINIMIZING FOR f!
@@ -632,43 +686,34 @@ opt_fun <- function(x) {
     file.remove(tmp.tsv)
   }
 
-  # EXPORT CURRENTLY EXPANDED SEARCH PARAMETERS:
-  OPT_PREVIOUS.tbl <- add_row(OPT_PREVIOUS.tbl,
-                              pitch_floor=praatPar$pitch_floor ,
-                              pitch_ceiling=praatPar$pitch_ceiling ,
-                              silence_threshold=praatPar$silence_threshold ,
-                              voicing_threshold=praatPar$voicing_threshold ,
-                              voiced_unvoiced_cost=praatPar$voiced_unvoiced_cost,
-                              num.calls=1,
-                              error.term=fehler )
-
   # RETURN ERROR
-  if(OPT_VERBOSE) cat(gettextf(" VALUE (VOICE ERROR) = %.6e\n", fehler))
+  #if(OPT_VERBOSE) cat(gettextf(" VALUE (VOICE ERROR) = %.6e\n", ausgabe$fehler))
   return(fehler)
 }
+
 
 
 # =============================================================================
 #
 # =============================================================================
 
-plot_and_save_results <- function(nm.result, outputDir, room, prev_pars.tbl)
+plot_and_save_results <- function(nm.result, outputDir, room, prev_pars.tbl, time.stamp)
 {
-  stempel <- format(Sys.time(), format="%Y-%m-%d+%H%M%S")
-  outFile <- file.path(outputDir, paste0("nm_results_", stempel, ".rds"))
+  outFile <- file.path(outputDir, paste0("nm_results_", time.stamp, ".rds"))
 
-  cat(gettextf("NELDER-MEAD RESULTS (ROOM %s), %s:\n", room, stempel))
+  cat(gettextf("  NELDER-MEAD RESULTS (ROOM %s), %s:\n", room, time.stamp))
 
   saveRDS(object = nm.result, file = outFile)
 
-  cat(gettextf("  OPTIMAL    x=[%f, %f, %f, %f, %f]\n", nm.result$par[1], nm.result$par[2], nm.result$par[3], nm.result$par[4], nm.result$par[5] ))
-  cat(gettextf("  OPTIMAL fval=%f\n", nm.result$fval))
-  cat(gettextf("  CONVERGENCE =(%d) %s\n", nm.result$convergence, nm.result$message))
+  cat(gettextf("  - OPTIMAL    x=[%f, %f, %f, %f, %f]\n", nm.result$par[1], nm.result$par[2], nm.result$par[3], nm.result$par[4], nm.result$par[5] ))
+  cat(gettextf("  - OPTIMAL fval=%f\n", nm.result$fval))
+  cat(gettextf("  - CONVERGENCE =(%d) %s\n", nm.result$convergence, nm.result$message))
 
   optimalParameters <- get_parameters_from_NMresult(nm.result)
-  cat(gettextf("  PARAMETERS  =[%8.6f, %8.6f, %8.6f, %8.6f, %8.6f]\n", optimalParameters[1], optimalParameters[2], optimalParameters[3], optimalParameters[4], optimalParameters[5]))
+  cat(gettextf("  - PARAMETERS  =[%8.6f, %8.6f, %8.6f, %8.6f, %8.6f]\n", optimalParameters[1], optimalParameters[2], optimalParameters[3], optimalParameters[4], optimalParameters[5]))
 
-  cat(gettextf("Number of parameter combinations: %4d\nTotal number of function calls:   %4d\n", nrow(prev_pars.tbl), sum(prev_pars.tbl$num.calls)   ))
+  #prev_pars.tbl <- readRDS(prev.par.file)
+  cat(gettextf("  - Number of parameter combinations: %4d\n  - Total number of function calls:   %4d\n", nrow(prev_pars.tbl), sum(prev_pars.tbl$num.calls)   ))
 }
 
 
@@ -693,21 +738,138 @@ backup_File <- function(f, suffix=NULL, warn=TRUE) {
   return(ok)
 }
 
+# =============================================================================
+#                                                                   NELDER-MEAD
+# =============================================================================
+# THIS RE-IMPLEMENTS THE FUNCTION lme4::Nelder_Mead IN ORDER TO USE ADDITIONAL
+# ATTRIBUTED ON THE INPUT AND OUTPUT ARGUMENTS OF THIS FUNCTION AND THE FUNCTION
+# fn = opt_fun_2
+# SEE THE DOCUMENTATION OF THE lme4 PACKAGE FOR DETAILS ON THE ORIGINAL
+# IMPLEMENTATION!
+#
+my_Nelder_Mead <- function (fn, param0, lower = rep.int(-Inf, n), upper = rep.int(Inf, n), control = list())
+{
+  ## DD>>
+  cache.tbl <- attr(param0, "cache")
+  dateien   <- attr(param0, "input")
+  gold.tbl  <- attr(param0, "gold")
+  ## <<DD
+  n <- length(param0)
+  if (is.null(xst <- control[["xst"]]))
+    xst <- rep.int(0.02, n)
+  if (is.null(xt <- control[["xt"]]))
+    xt <- xst * 5e-04
+  control[["xst"]] <- control[["xt"]] <- NULL
+  if (is.null(verbose <- control[["verbose"]]))
+    verbose <- 0
+  control[["verbose"]] <- NULL
+  if (is.null(control[["iprint"]])) {
+    control[["iprint"]] <- switch(as.character(min(as.numeric(verbose),3L)), `0` = 0, `1` = 20, `2` = 10, `3` = 1)
+  }
+  stopifnot(is.function(fn), length(formals(fn)) == 1L,
+            (n <- length(param0 <- as.numeric(param0))) == length(lower <- as.numeric(lower)),
+            length(upper <- as.numeric(upper)) == n,
+            length(xst <- as.numeric(xst)) == n, all(xst != 0),
+            length(xt <- as.numeric(xt)) == n )
+  nM <- NelderMead$new(lower = lower, upper = upper, x0 = param0, xst = xst, xt = xt)
+  cc <- do.call(
+    function(iprint = 0L, maxfun = 10000L, FtolAbs = 1e-05, FtolRel = 1e-15, XtolRel = 1e-07, MinfMax = -.Machine$double.xmax, warnOnly = FALSE, ...)
+    {
+      if (length(list(...)) > 0)
+        warning("unused control arguments ignored")
+      list(iprint = iprint, maxfun = maxfun, FtolAbs = FtolAbs,
+           FtolRel = FtolRel, XtolRel = XtolRel, MinfMax = MinfMax,
+           warnOnly = warnOnly)
+    },
+    control)
+  nM$setFtolAbs(cc$FtolAbs)
+  nM$setFtolRel(cc$FtolRel)
+  nM$setIprint(cc$iprint)
+  nM$setMaxeval(cc$maxfun)
+  nM$setMinfMax(cc$MinfMax)
+  it <- 0
+  repeat {
+    it <- it + 1
+    eingabe <- nM$xeval()
+    attr(eingabe, "input") <- dateien
+    attr(eingabe, "cache") <- cache.tbl
+    attr(eingabe, "gold")  <- gold.tbl
+    wert    <- fn(eingabe)
+    nMres   <- nM$newf(wert)
+    cache.tbl <- update_NM_cache_tbl(x = eingabe, f.value = wert, cache.tbl = cache.tbl)
+    #nMres <- nM$newf(fn(nM$xeval()))
+    if (nMres != 0L)
+      break
+  }
+  cmsg <- "reached max evaluations"
+  if (nMres == -4) {
+    cmsg <- warning(sprintf("failure to converge in %d evaluations",
+                            cc$maxfun))
+    nMres <- 4
+  }
+  msgvec <- c("nm_forced", "cannot generate a feasible simplex",
+              "initial x is not feasible", "active", "objective function went below allowed minimum",
+              "objective function values converged to within tolerance",
+              "parameter values converged to within tolerance",
+              cmsg)
+  if (nMres < 0) {
+    (if (cc$warnOnly)
+      warning
+     else stop)(msgvec[nMres + 4])
+  }
+  list(fval = nM$value(), param0 = nM$xpos(), convergence = pmin(0, nMres),
+       NM.result = nMres, message = msgvec[nMres + 4],
+       control = c(cc, xst = xst, xt = xt), feval = it,
+       DD.cache = cache.tbl )
+}
 
+
+# -----------------------------------------------------------------------------
+
+update_NM_cache_tbl <- function(x, f.value, cache.tbl) {
+  stopifnot(length(x)==5)
+  praatX <- get_parameters_from_NMx(x)
+  ix <- which(cache.tbl$pf == praatX$pitch_floor &
+                cache.tbl$pc == praatX$pitch_ceiling &
+                cache.tbl$st == praatX$silence_threshold &
+                cache.tbl$vt == praatX$voicing_threshold &
+                cache.tbl$vc == praatX$voiced_unvoiced_cost )
+  if(length(ix)==0) {
+    cache.tbl <- add_row(cache.tbl,
+                         pf=praatX$pitch_floor, pc=praatX$pitch_ceiling, st=praatX$silence_threshold, vt=praatX$voicing_threshold, vc=praatX$voiced_unvoiced_cost,
+                         #x1=x[1], x2=x[2], x3=x[3], x4=x[4], x5=x[5],
+                         fval=f.value, num.calls=1L)
+  } else if(length(ix)==1) {
+    cache.tbl[ix,]$num.calls <- 1 + cache.tbl[ix,]$num.calls
+  } else {
+    warning(gettextf("Inconsitend NM_cache for Praat p=[%f,%f,%f,%f,%f]; value=%f -- found %d rows in table!",
+                     praatX$pitch_floor, praatX$pitch_ceiling, praatX$silence_threshold, praatX$voicing_threshold, praatX$voiced_unvoiced_cost,
+                     f.value, length(ix)))
+  }
+  return(cache.tbl)
+}
+
+# =============================================================================
+
+get_parameters_from_NMx <- cmpfun(get_parameters_from_NMx)
+update_NM_cache_tbl     <- cmpfun(update_NM_cache_tbl)
+evaluate_voice_2        <- cmpfun(evaluate_voice_2)
+opt_fun_2               <- cmpfun(opt_fun_2)
+my_Nelder_Mead          <- cmpfun(my_Nelder_Mead)
 
 # =============================================================================
 #
 # =============================================================================
-
+timestamp()
 cat("PREPARING GOLD DATA...\n")
 
-DATAFILES <- read_csv(KONFIG$files.csv)
+suppressMessages( DATAFILES <- read_csv(KONFIG$files.csv) )
 GOLDVOICE <- load_gold_voice_annotations(gold.files.tbl = DATAFILES, train.test.ratio = ifelse(KONFIG$doTrainTest, KONFIG$trainTestRatio, NA))
 
 cat("INITIALIZING OUTPUT DIRECTORIES...\n")
 allRooms <- sort(unique(DATAFILES$room))
 for(xRoom in allRooms) {
-  dir.create(path = file.path(KONFIG$outputDir, format_room(xRoom)), recursive = TRUE)
+  dir.create(path = file.path(KONFIG$outputDir, format_room(xRoom)), recursive = TRUE, showWarnings = FALSE)
 }
 
 
@@ -743,18 +905,16 @@ if(KONFIG$NelderMead$max_fun < 1) {
   warning("SKIPPING NELDER-MEAD (max_fun < 1)!", immediate. = TRUE)
 
 } else {
-
   cat("RUNNING NELDER-MEAD OPTIMIZATION FOR ALL ROOMS...\n")
 
-  OPT_VERBOSE <- KONFIG$verbose
-
   for(iRoom in 1:length(allRooms)) {# iRoom = 1
+    timestamp()
     cat(gettextf("OPTIMIZING FOR ROOM: <%s>\n", allRooms[iRoom]))
 
-    OPT_DATAINDEX <- which(DATAFILES$room == allRooms[iRoom])
+    indexRooms <- which(DATAFILES$room == allRooms[iRoom])
 
-    if(length(OPT_DATAINDEX)==0) {
-      warning(gettextf("No training data for room <%s>?", allRooms[iRoom]))
+    if(length(indexRooms)==0) {
+      warning(gettextf("No input data for room <%s>?", allRooms[iRoom]))
       next()
     }
 
@@ -764,37 +924,19 @@ if(KONFIG$NelderMead$max_fun < 1) {
 
     outDir <- file.path(KONFIG$outputDir, format_room(allRooms[iRoom]))
 
-    OPT_PREVIOUS_PARAMETERS_FILE <- file.path(outDir, "prev_pars_tbl.rds")
+    attr(p0, "input") <- DATAFILES[indexRooms,]
+    attr(p0, "cache") <- load_previous_parameters_to_tbl(data.dir = outDir, file.pattern = "prev.+\\.rds$")
+    attr(p0, "gold")  <- filter(GOLDVOICE, index %in% indexRooms, train == TRUE)
 
-    if(file.exists(OPT_PREVIOUS_PARAMETERS_FILE)) {
-      OPT_PREVIOUS.tbl <- readRDS(OPT_PREVIOUS_PARAMETERS_FILE)
-      cat(gettextf("Loaded %s with %d previously tested parameter combinations\n", OPT_PREVIOUS_PARAMETERS_FILE, nrow(OPT_PREVIOUS.tbl)))
+    cat(gettextf("  Running Nelder-Mead with p0=[%f, %f, %f, %f, %f]\n", p0[1], p0[2], p0[3], p0[4], p0[5] ))
+    nm.result <- my_Nelder_Mead(opt_fun_2, p0,
+                                lower=rep(0,length(p0)), upper=rep(1,length(p0)),
+                                control=list(maxfun=KONFIG$NelderMead$max_fun, verbose=KONFIG$NelderMead$verbose, FtolAbs=KONFIG$NelderMead$ftolabs, XtolRel=KONFIG$NelderMead$xtorel))
 
-    } else {
-      OPT_PREVIOUS.tbl <- tibble(pitch_floor=numeric(),
-                                 pitch_ceiling=numeric(),
-                                 silence_threshold=numeric(),
-                                 voicing_threshold=numeric(),
-                                 voiced_unvoiced_cost=numeric(),
-                                 num.calls=integer(),
-                                 error.term=numeric())
-      #saveRDS(OPT_PREVIOUS.tbl, file = OPT_PREVIOUS_PARAMETERS_FILE)
-      #rm(prev_pars.tbl)
-    }
+    saveRDS(nm.result$DD.cache, file = file.path(outDir, paste0("prev_", KONFIG$timeStamp, ".rds")))
 
-    # NM <- NelderMead$new(lower=rep(0,length(p0)), upper=rep(1,length(p0)), xst=rep(0.02,length(p0)), x0=p0, xt=rep(0.02,length(p0))*5e-4)
-
-    cat(gettextf("Running Nelder-Mead with p0=[%f, %f, %f, %f, %f]\n", p0[1], p0[2], p0[3], p0[4], p0[5] ))
-    nm.result <- Nelder_Mead(opt_fun, p0,
-                             lower=rep(0,length(p0)), upper=rep(1,length(p0)),
-                             control=list(maxfun=KONFIG$NelderMead$max_fun, verbose=KONFIG$NelderMead$verbose, FtolAbs=KONFIG$NelderMead$ftolabs, XtolRel=KONFIG$NelderMead$xtorel))
-
-    saveRDS(OPT_PREVIOUS.tbl, file = OPT_PREVIOUS_PARAMETERS_FILE)
-
-    plot_and_save_results(nm.result, outputDir=outDir, room=allRooms[iRoom], prev_pars.tbl = OPT_PREVIOUS.tbl)
-
+    plot_and_save_results(nm.result, outputDir=outDir, room=allRooms[iRoom], prev_pars.tbl = nm.result$DD.cache, time.stamp = KONFIG$timeStamp)
   }#ENDFOR iRoom
-
 }
 
 # -----------------------------------------------------------------------------
@@ -840,6 +982,7 @@ write_csv(praatParams.tbl, path = file.path(KONFIG$outputDir, "praatParams.csv")
 
 if(KONFIG$doTrainTest) {
   if(KONFIG$runTest) {
+    timestamp()
     cat("RUNNING PRAAT ON TEST SET...\n")
 
     DATAFILES$test.N    <- NA_integer_
@@ -849,14 +992,13 @@ if(KONFIG$doTrainTest) {
     for(ix in 1:nrow(DATAFILES)) {
       xRoom <- DATAFILES[ix,]$room
 
-      tmp.tbl <- filter(GOLDVOICE, index == ix, train == FALSE)
-      DATAFILES[ix,]$test.N <- nrow(tmp.tbl)
-      if(nrow(tmp.tbl)==0) {
+      GOLD <- filter(GOLDVOICE, index == ix, train == FALSE)
+      DATAFILES[ix,]$test.N <- nrow(GOLD)
+      if(nrow(GOLD)==0) {
         warning(gettextf("No \"test\" items in %s?", DATAFILES[ix,]$gold.voice.file))
-        rm(tmp.tbl)
+        rm(GOLD)
         next()
       }
-      rm(tmp.tbl)
 
       praatPar <- as.list( praatParams.tbl[praatParams.tbl$room == xRoom,] )
 
@@ -866,48 +1008,43 @@ if(KONFIG$doTrainTest) {
       # USE OPTIMIZED PARAMETERS:
       tmp.tsv <- tempfile(fileext = ".tsv")
       suppressWarnings (
-        tmp.tbl <- praat_voiceAdvanced(sound.file = wavFile, textGrid.file = iFile, target.tier = KONFIG$phone_tier, target.segments = KONFIG$phone_segments, output.tsv.file = tmp.tsv,
+        tmp.tbl <- praat_voiceAdvanced(sound.file = wavFile, textGrid.file = iFile, output.tsv.file = tmp.tsv,
                                        pitch.floor = praatPar$pitch_floor,
                                        pitch.ceiling = praatPar$pitch_ceiling,
                                        silence.threshold = praatPar$silence_threshold,
                                        voicing.threshold = praatPar$voicing_threshold,
-                                       voiced.unvoiced.cost = praatPar$voiced_unvoiced_cost,
-                                       write.log.file = FALSE,
-                                       praat.exe = KONFIG$PRAAT.EXE,
-                                       praat.script = KONFIG$PRAAT.SCRIPT,
-                                       is.Windows = KONFIG$isWindows)
+                                       voiced.unvoiced.cost = praatPar$voiced_unvoiced_cost
+        )
       )
-      DATAFILES[ix,]$error.opt <- evaluate_voice(praat.tsv=tmp.tbl, gold.index = ix, default.error=KONFIG$DEFAULT_ERROR, train = FALSE)
+      DATAFILES[ix,]$error.opt <- evaluate_voice_2(praat.tbl = tmp.tbl, gold.tbl = GOLD)
       rm(tmp.tsv, tmp.tbl)
 
       # USE DEFAULT PARAMETERS:
       tmp.tsv <- tempfile(fileext = ".tsv")
       suppressWarnings (
-        tmp.tbl <- praat_voiceAdvanced(sound.file = wavFile, textGrid.file = iFile, target.tier = KONFIG$phone_tier, target.segments = KONFIG$phone_segments, output.tsv.file = tmp.tsv,
+        tmp.tbl <- praat_voiceAdvanced(sound.file = wavFile, textGrid.file = iFile, output.tsv.file = tmp.tsv,
                                        pitch.floor = DEFAULT_VOICEADVANCED$pitch.floor,
                                        pitch.ceiling = DEFAULT_VOICEADVANCED$pitch.ceiling,
                                        silence.threshold = DEFAULT_VOICEADVANCED$silence.threshold,
                                        voicing.threshold = DEFAULT_VOICEADVANCED$voicing.threshold,
-                                       voiced.unvoiced.cost = DEFAULT_VOICEADVANCED$voiced.unvoiced.cost,
-                                       write.log.file = FALSE,
-                                       praat.exe = KONFIG$PRAAT.EXE,
-                                       praat.script = KONFIG$PRAAT.SCRIPT,
-                                       is.Windows = KONFIG$isWindows)
+                                       voiced.unvoiced.cost = DEFAULT_VOICEADVANCED$voiced.unvoiced.cost
+        )
       )
-      DATAFILES[ix,]$error.def <- evaluate_voice(praat.tsv=tmp.tbl, gold.index = ix, default.error=KONFIG$DEFAULT_ERROR, train = FALSE)
+      DATAFILES[ix,]$error.def <- evaluate_voice_2(praat.tbl = tmp.tbl, gold.tbl = GOLD)
       rm(tmp.tsv, tmp.tbl)
     }
 
     cat("EXPORTING TEST RESULTS...\n")
-    stempel <- format(Sys.time(), format="%Y-%m-%d+%H%M%S")
-    outFile <- file.path(KONFIG$outputDir, paste0("test_results_tbl_", stempel, ".csv"))
+    outFile <- file.path(KONFIG$outputDir, paste0("test_results_tbl_", KONFIG$timeStamp, ".csv"))
     write_csv(select(DATAFILES, gold.voice.file, room, test.N, error.opt, error.def), path = outFile)
 
   } else {
     warning("SKIPPING EVALUATION ON TEST SET!", immediate. = TRUE)
   }
+
 }
 
 # =============================================================================
+timestamp()
 cat("ALL DONE. BYE!\n")
 
