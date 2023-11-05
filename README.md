@@ -7,9 +7,7 @@ im deutschsprachigen Raum, Trier. <www.pundp2020.uni-trier.de>
 
 **Daniel Duran**
 
-daniel.duran@germanistik.uni-freiburg.de
-
-http://paul.igl.uni-freiburg.de/duran/
+duran@leibniz-zas.de <https://orcid.org/0000-0001-6769-2281>
 
 ## Changes
 
@@ -38,7 +36,7 @@ Semi-supervised optimization of Praat analysis parameters for voicing measuremen
 
 In order to run the optimization, you only need to run the R-script **optVoicing.R**.
 
-_WARNING:_ Running this script may take a very long time (depending on your machine). You may want to run the script first on a smaller supset of your data and/or restrict the maximum number of function evaluations to a very small value until your setup is ready!
+_WARNING:_ Running this script may take a very long time (depending on your machine). You may want to run the script first on a smaller subset of your data and/or restrict the maximum number of function evaluations to a very small value until your setup is ready!
 
 #### Configuration
 
